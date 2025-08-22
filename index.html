@@ -13,6 +13,7 @@ video, canvas { position:absolute; top:0; left:0; width:100%; height:100%; objec
 </style>
 </head>
 <body>
+
 <video id="video" autoplay playsinline muted></video>
 <canvas id="canvas"></canvas>
 <div id="forza">Forza: 0</div>
@@ -36,10 +37,19 @@ let forzaAttuale = 0;
 
 startBtn.addEventListener('click', async () => {
     startBtn.style.display = 'none';
-    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-    video.srcObject = stream;
-    video.play();
-    processFrame();
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+        video.srcObject = stream;
+
+        video.addEventListener('loadeddata', () => {
+            processFrame();
+        }, { once: true });
+
+        await video.play();
+    } catch(err) {
+        console.error("Errore accesso camera:", err);
+        alert("Non è stato possibile accedere alla camera.");
+    }
 });
 
 playAgainBtn.addEventListener('click', ()=>{
@@ -63,7 +73,6 @@ function processFrame(){
         let redX=0, redY=0, count=0;
         const minPixels = 80;
 
-        // rilevamento punch ball rosso intenso
         for(let i=0;i<data.length;i+=4){
             const r=data[i], g=data[i+1], b=data[i+2];
             const rgbSum = r+g+b;
@@ -98,19 +107,15 @@ function processFrame(){
                 const dist = Math.sqrt(dx*dx + dy*dy);
                 const speed = dist*60; // assume 60fps
 
-                // logica ready: punteggio parte solo se movimento reale
-                if(!ready && speed>20){
-                    ready = true;
-                }
+                if(!ready && speed>20) ready = true;
 
-                if(ready && speed>30){ // calcolo forza solo se colpo significativo
+                if(ready && speed>30){
                     let forzaCalcolata = Math.min(999, Math.floor(Math.log(speed)*200));
                     if(forzaCalcolata>100){
                         forzaAttuale += (forzaCalcolata-forzaAttuale)*0.1;
                         forzaLabel.textContent = "Forza: " + Math.floor(forzaAttuale);
                     }
 
-                    // colpo rilevato: blocca punteggio
                     if(speed>40 && !punteggioBloccato){
                         punteggioBloccato = true;
                         forzaAttuale = Math.floor(forzaAttuale);
@@ -121,3 +126,17 @@ function processFrame(){
                             forzaLabel.classList.add("flash");
                             hitSound.play().catch(()=>{});
                             setTimeout(()=>forzaLabel.classList.remove("flash"),300);
+                        }
+                    }
+                }
+            }
+        }
+
+        requestAnimationFrame(process);
+    }
+    process();
+}
+</script>
+
+</body>
+</html>
