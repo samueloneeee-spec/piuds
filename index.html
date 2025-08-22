@@ -62,11 +62,10 @@ function processFrame(){
         let redX=0, redY=0, count=0;
         const minPixels = 80;
 
-        // Rilevamento punch ball rosso
         for(let i=0;i<data.length;i+=4){
             const r=data[i], g=data[i+1], b=data[i+2];
             const rgbSum = r+g+b;
-            if(r>150 && g<100 && b<100 && rgbSum<400){ // solo rosso intenso, esclude pelle
+            if(r>150 && g<100 && b<100 && rgbSum<400){
                 const idx = i/4;
                 const x = idx%canvas.width;
                 const y = Math.floor(idx/canvas.width);
@@ -96,25 +95,25 @@ function processFrame(){
                 const dy = centerY - lastPositions[lastPositions.length-2].y;
                 const dist = Math.sqrt(dx*dx + dy*dy);
 
-                if(dist>movimentoMin){
-                    let forzaCalcolata = Math.min(999, Math.floor(dist*12));
-                    if(forzaCalcolata <= 100) forzaCalcolata = 0; // aggiorna solo se >100
+                const speed = dist * 60; // assume 60fps
 
-                    if(forzaCalcolata > 0){
+                if(speed > 15){ // colpo reale
+                    let forzaCalcolata = Math.min(999, Math.floor(speed*12));
+                    if(forzaCalcolata > 100){ // ignora piccoli movimenti
                         forzaAttuale += (forzaCalcolata-forzaAttuale)*0.1;
                         forzaLabel.textContent = "Forza: " + Math.floor(forzaAttuale);
+                    }
+
+                    if(speed > 20 && !punteggioBloccato){ // colpo rilevato
+                        punteggioBloccato = true;
+                        forzaAttuale = Math.floor(forzaAttuale);
+                        forzaLabel.textContent = "Forza: " + forzaAttuale;
+                        playAgainBtn.style.display='block';
 
                         if(forzaAttuale > 800){
                             forzaLabel.classList.add("flash");
                             hitSound.play().catch(()=>{});
                             setTimeout(()=>forzaLabel.classList.remove("flash"),300);
-                        }
-
-                        if(dist>20 && !punteggioBloccato){
-                            punteggioBloccato = true;
-                            forzaAttuale = Math.floor(forzaAttuale);
-                            forzaLabel.textContent = "Forza: " + forzaAttuale;
-                            playAgainBtn.style.display='block';
                         }
                     }
                 }
