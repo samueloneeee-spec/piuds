@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <title>Punch Ball Force</title>
+  <style>
+    body { 
+      margin: 0; 
+      background: black; 
+      color: white; 
+      font-family: "Courier New", monospace; 
+      text-align: center; 
+      overflow: hidden;
+    }
+    video, canvas { 
+      position: absolute; 
+      top: 0; left: 0; 
+      width: 100%; 
+      height: 100%; 
+      object-fit: cover; 
+    }
+    #forza {
+      position: absolute;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 64px;
+      font-weight: bold;
+      color: #00ffcc;
+      text-shadow: 0 0 15px #00ffff, 0 0 30px #00ffff;
+      background: rgba(0,0,0,0.6);
+      padding: 15px 30px;
+      border-radius: 15px;
+      transition: transform 0.2s, color 0.2s;
+    }
+    .flash {
+      color: #ff0055 !important;
+      text-shadow: 0 0 20px #ff0055, 0 0 40px #ff0055;
+      transform: scale(1.3);
+    }
+    #startBtn, #playAgainBtn {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 32px;
+      padding: 20px 40px;
+      border-radius: 20px;
+      border: none;
+      background: #00ffcc;
+      color: black;
+      font-weight: bold;
+      cursor: pointer;
+      z-index: 10;
+    }
+    #playAgainBtn { display: none; }
+  </style>
+</head>
+<body>
+  <video id="video" autoplay playsinline muted></video>
+  <canvas id="canvas"></canvas>
+  <div id="forza">Forza: 0</div>
+  <button id="startBtn">Inizia</button>
+  <button id="playAgainBtn">Gioca Ancora</button>
+
+  <audio id="hitSound" src="https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg"></audio>
+
+  <script>
+    const video = document.getElementById("video");
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+    const forzaLabel = document.getElementById("forza");
+    const hitSound = document.getElementById("hitSound");
+    const startBtn = document.getElementById("startBtn");
+    const playAgainBtn = document.getElementById("playAgainBtn");
+
+    let punteggioBloccato = false;
+    let lastPositions = []; // array per media mobile centro punch ball
+    let forzaAttuale = 0;
+
+    startBtn.addEventListener('click', async () => {
+      startBtn.style.display = 'none';
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+      video.srcObject = stream;
+      video.play();
+      processFrame();
+    });
+
+    playAgainBtn.addEventListener('click', () => {
+      punteggioBloccato = false;
+      forzaAttuale = 0;
+      lastPositions = [];
+      forzaLabel.textContent = "Forza: 0";
+      playAgainBtn.style.display = 'none';
+    });
+
+    function rgbToHsl(r, g, b) {
+      r /= 255; g /= 255; b /= 255;
+      const max = Math.max(r, g, b), min = Math.min(r, g, b);
+      let h, s, l = (max + min) / 2;
+      if(max === min) { h = s = 0; }
+      else {
+        const d = max - min;
+        s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+        switch(max) {
+          case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+          case g: h = (b - r) / d + 2; break;
+          case b: h = (r - g) / d + 4; break;
+        }
+        h /= 6;
+      }
+      return [h*360, s*100, l*100];
+    }
+
+    function processFrame() {
+      canvas.width = video.videoWidth || window.innerWidth;
+      canvas.height = video.videoHeight || window.innerHeight;
+
+      function process() {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const frame = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const data = frame.data;
+
+        let redX = 0, redY = 0, count = 0;
+        const minPixels = 80; // richiede abbastanza pixel
+
+        for (let i = 0; i < data.length; i += 4) {
+          const r = data[i], g = data[i+1], b = data[i+2];
+          const [h, s, l] = rgbToHsl(r, g, b);
+          if(((h >= 0 && h <= 10) || (h >= 350 && h <= 360)) && s > 60 && l > 30 && l < 80) {
+            const index = i / 4;
+            const x = index % canvas.width;
+            const y = Math.floor(index / canvas.width);
+            redX += x;
+            redY += y;
+            count++;
+          }
+        }
+
+        if (count >= minPixels && !punteggioBloccato) {
+          const avgX = redX / count;
+          const avgY = redY / count;
+
+          lastPositions.push({x: avgX, y: avgY});
+          if(lastPositions.length > 5) lastPositions.shift(); // media ultimi 5 frame
+
+          const sum = lastPositions.reduce((acc,p) => { acc.x+=p.x; acc.y+=p.y; return acc; }, {x:0,y:0});
+          const centerX = sum.x / lastPositions.length;
+          const centerY = sum.y / lastPositions.length;
+
+          ctx.beginPath();
+          ctx.arc(centerX, centerY, 20, 0, 2*Math.PI);
+          ctx.strokeStyle = "lime";
+          ctx.lineWidth = 4;
+          ctx.stroke();
+
+          if(lastPositions.length >= 2){
+            const dx = centerX - lastPositions[lastPositions.length-2].x;
+            const dy = centerY - lastPositions[lastPositions.length-2].y;
+            const dist = Math.sqrt(dx*dx + dy*dy);
+            const dt = 1/60; // assume 60fps per frame
+            const speed = dist / dt;
+
+            // scala realistica: forza media circa 600, massimo 999
+            let forzaCalcolata = Math.min(999, Math.floor(speed / 40) * 10);
+            forzaCalcolata = Math.max(forzaCalcolata, 50); // minimo punteggio per colpo
+
+            // incremento fluido
+            forzaAttuale += (forzaCalcolata - forzaAttuale) * 0.1;
+            forzaLabel.textContent = "Forza: " + Math.floor(forzaAttuale);
+
+            if(forzaAttuale > 800){
+              forzaLabel.classList.add("flash");
+              hitSound.play().catch(()=>{});
+              setTimeout(()=> forzaLabel.classList.remove("flash"), 300);
+            }
+
+            if(speed > 150 && !punteggioBloccato){ // colpo rilevato
+              punteggioBloccato = true;
+              forzaAttuale = Math.floor(forzaAttuale);
+              forzaLabel.textContent = "Forza: " + forzaAttuale;
+              playAgainBtn.style.display = 'block';
+            }
+          }
+        }
+
+        requestAnimationFrame(process);
+      }
+      process();
+    }
+  </script>
+</body>
+</html>
