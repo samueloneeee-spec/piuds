@@ -30,13 +30,13 @@ const startBtn = document.getElementById("startBtn");
 const playAgainBtn = document.getElementById("playAgainBtn");
 
 let punteggioBloccato = false;
+let ready = false; // punteggio parte solo dopo movimento reale
 let lastPositions = [];
 let forzaAttuale = 0;
-const movimentoMin = 8;
 
 startBtn.addEventListener('click', async () => {
     startBtn.style.display = 'none';
-    const stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}});
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
     video.srcObject = stream;
     video.play();
     processFrame();
@@ -44,6 +44,7 @@ startBtn.addEventListener('click', async () => {
 
 playAgainBtn.addEventListener('click', ()=>{
     punteggioBloccato = false;
+    ready = false;
     forzaAttuale = 0;
     lastPositions = [];
     forzaLabel.textContent = "Forza: 0";
@@ -51,8 +52,8 @@ playAgainBtn.addEventListener('click', ()=>{
 });
 
 function processFrame(){
-    canvas.width = video.videoWidth||window.innerWidth;
-    canvas.height = video.videoHeight||window.innerHeight;
+    canvas.width = video.videoWidth || window.innerWidth;
+    canvas.height = video.videoHeight || window.innerHeight;
 
     function process(){
         ctx.drawImage(video,0,0,canvas.width,canvas.height);
@@ -62,6 +63,7 @@ function processFrame(){
         let redX=0, redY=0, count=0;
         const minPixels = 80;
 
+        // rilevamento punch ball rosso intenso
         for(let i=0;i<data.length;i+=4){
             const r=data[i], g=data[i+1], b=data[i+2];
             const rgbSum = r+g+b;
@@ -94,17 +96,22 @@ function processFrame(){
                 const dx = centerX - lastPositions[lastPositions.length-2].x;
                 const dy = centerY - lastPositions[lastPositions.length-2].y;
                 const dist = Math.sqrt(dx*dx + dy*dy);
+                const speed = dist*60; // assume 60fps
 
-                const speed = dist * 60; // assume 60fps
+                // logica ready: punteggio parte solo se movimento reale
+                if(!ready && speed>20){
+                    ready = true;
+                }
 
-                if(speed > 15){ // colpo reale
-                    let forzaCalcolata = Math.min(999, Math.floor(speed*12));
-                    if(forzaCalcolata > 100){ // ignora piccoli movimenti
+                if(ready && speed>30){ // calcolo forza solo se colpo significativo
+                    let forzaCalcolata = Math.min(999, Math.floor(Math.log(speed)*200));
+                    if(forzaCalcolata>100){
                         forzaAttuale += (forzaCalcolata-forzaAttuale)*0.1;
                         forzaLabel.textContent = "Forza: " + Math.floor(forzaAttuale);
                     }
 
-                    if(speed > 20 && !punteggioBloccato){ // colpo rilevato
+                    // colpo rilevato: blocca punteggio
+                    if(speed>40 && !punteggioBloccato){
                         punteggioBloccato = true;
                         forzaAttuale = Math.floor(forzaAttuale);
                         forzaLabel.textContent = "Forza: " + forzaAttuale;
@@ -114,16 +121,3 @@ function processFrame(){
                             forzaLabel.classList.add("flash");
                             hitSound.play().catch(()=>{});
                             setTimeout(()=>forzaLabel.classList.remove("flash"),300);
-                        }
-                    }
-                }
-            }
-        }
-
-        requestAnimationFrame(process);
-    }
-    process();
-}
-</script>
-</body>
-</html>
